@@ -112,12 +112,12 @@ def load_kokoro():
 
 
 def system_voice_cmd(text: str):
-    """The OS's own speech command, used if Kokoro cannot load. Returns (argv, env) or None."""
+    """The OS's own speech command, used if Kokoro cannot load. Returns (argv, stdin text) or None."""
     if sys.platform == "darwin":
         return ["say", text], None
-    if sys.platform == "win32":
-        ps = "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak($env:VOICE_BUDDY_TEXT)"
-        return ["powershell", "-NoProfile", "-Command", ps], {**os.environ, "VOICE_BUDDY_TEXT": text}
+    if sys.platform == "win32":   # text via stdin: no quoting games, and no environment handed over
+        ps = "Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak([Console]::In.ReadToEnd())"
+        return ["powershell", "-NoProfile", "-Command", ps], text
     for tool in ("espeak-ng", "espeak", "spd-say"):
         if shutil.which(tool):
             return [tool, text], None
@@ -184,7 +184,12 @@ class Speaker:
         cmd = system_voice_cmd(text)
         if not cmd:
             return
-        proc = subprocess.Popen(cmd[0], env=cmd[1], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        argv, stdin_text = cmd
+        proc = subprocess.Popen(argv, stdin=subprocess.PIPE if stdin_text else subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+        if stdin_text:
+            proc.stdin.write(stdin_text)
+            proc.stdin.close()
         while proc.poll() is None:
             if self.gen != mine:
                 proc.terminate()
@@ -193,9 +198,9 @@ class Speaker:
 
 # --- the helper ----------------------------------------------------------------------------------
 class Helper:
-    def __init__(self, state_dir: Path, owner: str):
+    def __init__(self, state_dir: Path):
         self.dir = state_dir
-        self.owner = owner
+        self.owner = ""                   # set by the plugin's `claim` command
         self.started = time.time()
         self.speaker = None
         self.stream = None                # mic InputStream while unmuted
@@ -347,7 +352,6 @@ class Helper:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--state-dir", default=str(Path(__file__).resolve().parent.parent / ".state"))
-    ap.add_argument("--owner", default="")
     args = ap.parse_args()
     state_dir = Path(args.state_dir)
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -360,7 +364,7 @@ def main():
 
     sys.stderr = open(state_dir / "helper.log", "w", buffering=1)
     os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
-    Helper(state_dir, args.owner).run()
+    Helper(state_dir).run()
 
 
 if __name__ == "__main__":

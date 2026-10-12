@@ -47,17 +47,17 @@ If the pane says your mic is giving pure silence, the usual cause is a headset (
 
 ### Programs it runs, and why
 
-The plugin runs one command, only when you turn voice on (`/buddy`), or at session start if you left it on:
+The plugin runs one command, from its own folder, only when you turn voice on (`/buddy`), or at session start if you left it on:
 
 ```
-uv run --locked --script <plugin>/helper/launch.py start <session-id>
+uv run --locked --script helper/launch.py start
 ```
 
 - **`uv`** supplies Python and installs the helper's audio libraries, at the exact versions in the committed `helper/*.py.lock` files (`--locked`).
-- **`helper/launch.py`** (standard library only) starts the audio helper in the background, unless one is already running: `uv run --locked --script <plugin>/helper/helper.py --state-dir <plugin>/.state --owner <session-id>`.
+- **`helper/launch.py`** (standard library only) starts the audio helper in the background, unless one is already running: `uv run --locked --script <plugin>/helper/helper.py --state-dir <plugin>/.state`.
 - **`helper/helper.py`** listens to the microphone, turns speech into text, and speaks replies. On non-Apple machines, if Kokoro can't load, it runs the OS's own speech program for replies: `say` (macOS), PowerShell's System.Speech (Windows), or `espeak-ng`, `espeak` or `spd-say` (Linux).
 
-`<session-id>` is a random ID the plugin makes for each session, so the helper knows which session gets the transcripts.
+The plugin then writes a `claim` command file holding a random ID it made for this session, so the helper knows which session gets the transcripts.
 
 ### Files it reads and writes
 
@@ -73,7 +73,7 @@ Everything is in `<plugin>/.state/` (the plugin's own folder). The plugin doesn'
 
 Model files go to the usual caches: Hugging Face's (`~/.cache/huggingface`), and on non-Apple machines `~/.cache/voice-buddy` for Kokoro ONNX. Claude Code's plugin storage keeps one value: whether voice was left on (`autostart`).
 
-The plugin reads no secrets, keys or settings from your machine.
+The plugin reads no secrets, keys or settings from your machine. The helper reads only its own environment variables (`VOICE_BUDDY_*`, above) and hands no environment to any program it starts.
 
 ### What it sends, and where
 
@@ -87,6 +87,13 @@ The plugin reads no secrets, keys or settings from your machine.
 
   Nothing about you or your conversation is sent in these requests.
 - **Your prompts and Claude's replies** go only where Claude Code already sends them.
+
+Where each piece of data goes, end to end:
+
+- **Your speech:** microphone → helper (in memory) → text in `.state/state.json` → read by the plugin → submitted as your prompt. That's the only thing the plugin reads from a file and puts in a prompt.
+- **Claude's final reply:** read by the `turn.complete` hook → written to `.state/cmd/*.json` → spoken by the helper → file deleted. It goes nowhere else.
+- **The command the plugin runs** gets no data at all: it's fixed text, with no arguments from the conversation or from files.
+- **The `prompt.submit` hook** doesn't read or keep your prompt; it only tells the helper to stop speaking.
 
 ### What it puts in prompts
 

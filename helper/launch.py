@@ -5,7 +5,7 @@
 # ///
 """Plugin-side launcher (stdlib only; the plugin runs it with `uv run --locked --script`, so it works on every OS).
 
-  launch.py start OWNER      start the helper detached unless one is already running; prints started|running
+  launch.py start      start the helper detached unless one is already running; prints started|running
 """
 import os
 import subprocess
@@ -23,14 +23,14 @@ def is_running() -> bool:
         return False
 
 
-def start(owner: str) -> str:
+def start() -> str:
     if is_running():
         return "running"
     STATE.mkdir(parents=True, exist_ok=True)
     for stale in (STATE / "cmd").glob("*.json"):   # commands left over from an earlier run
         stale.unlink(missing_ok=True)
     (STATE / "heartbeat").write_text(str(int(time.time() * 1000)))   # grace period while the models load
-    cmd = ["uv", "run", "--locked", "--script", str(Path(__file__).with_name("helper.py")), "--state-dir", str(STATE), "--owner", owner]
+    cmd = ["uv", "run", "--locked", "--script", str(Path(__file__).with_name("helper.py")), "--state-dir", str(STATE)]
     log = open(STATE / "helper.out", "ab")
     flags = {"creationflags": 0x00000008 | 0x00000200} if os.name == "nt" else {"start_new_session": True}  # detached
     subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=log, stderr=log, **flags)
@@ -39,6 +39,6 @@ def start(owner: str) -> str:
 
 if __name__ == "__main__":
     if sys.argv[1:2] == ["start"]:
-        print(start(sys.argv[2] if len(sys.argv) > 2 else ""))
+        print(start())
     else:
-        sys.exit("usage: launch.py start OWNER")
+        sys.exit("usage: launch.py start")

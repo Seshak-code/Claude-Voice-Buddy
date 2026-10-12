@@ -39,7 +39,6 @@ type Helper = {
 // Plain module state: a reload starts these over, the helper itself keeps running.
 const S = {
   isActive: false,
-  dir: '',
   token: '',
   lastId: -1,
   ticks: 0,
@@ -55,20 +54,21 @@ const S = {
 
 // The one program this plugin runs: its own stdlib-only launcher, through uv (which supplies Python on any OS).
 // It starts the audio helper in the background unless one is running already.
+// Every word is fixed; the plugin's folder is given as the working directory.
 const startHelper = ($: Api) =>
-  $.process.run(['uv', 'run', '--locked', '--script', `${$.plugin.root}/helper/launch.py`, 'start', S.token])
+  $.process.run(['uv', 'run', '--locked', '--script', 'helper/launch.py', 'start'], { cwd: $.plugin.root })
 
 const remember = (line: string) => S.chat.splice(0, S.chat.push(line) - 5) // keep the last 5
 
 // Commands to the helper are small files it picks up in name order: no shell, socket or lock, so any OS works.
 const command = ($: Api, cmd: Record<string, unknown>) =>
-  $.fs.write(`${S.dir}/cmd/${Date.now()}-${String(S.seq++).padStart(4, '0')}.json`, JSON.stringify(cmd))
+  $.fs.write(`${$.plugin.root}/.state/cmd/${Date.now()}-${String(S.seq++).padStart(4, '0')}.json`, JSON.stringify(cmd))
 
 async function tick($: Api) {
   S.ticks += 1
-  if (S.ticks % HEARTBEAT_EVERY === 1) await $.fs.write(`${S.dir}/heartbeat`, String(Date.now()))
+  if (S.ticks % HEARTBEAT_EVERY === 1) await $.fs.write(`${$.plugin.root}/.state/heartbeat`, String(Date.now()))
   // null: not written yet, or caught mid-replace; the next tick tries again
-  const helper: Helper | null = await $.fs.read(`${S.dir}/state.json`).then(JSON.parse).catch(() => null)
+  const helper: Helper | null = await $.fs.read(`${$.plugin.root}/.state/state.json`).then(JSON.parse).catch(() => null)
   const isMine = helper !== null && helper.owner === S.token // a stale file or another session's helper isn't ours
 
   if (isMine) {
@@ -104,10 +104,11 @@ async function tick($: Api) {
 
 // No helper of ours is answering: start one if none is alive; if another session's is, say so rather than steal it.
 async function recover($: Api, helper: Helper | null) {
-  const alive = await $.fs.stat(`${S.dir}/alive`).catch(() => undefined)
+  const alive = await $.fs.stat(`${$.plugin.root}/.state/alive`).catch(() => undefined)
   const isAlive = alive !== undefined && Date.now() - alive.mtimeMs < 5000
   S.inUseElsewhere = isAlive && helper !== null && helper.state !== 'loading'
   if (!isAlive) await startHelper($).catch(() => undefined)
+  if (!isAlive) await command($, { cmd: 'claim', owner: S.token })
 }
 
 async function activate($: Api): Promise<string> {
@@ -117,11 +118,10 @@ async function activate($: Api): Promise<string> {
     return 'Voice is on.'
   }
   try {
-    S.dir = `${$.plugin.root}/.state` // every file this plugin reads or writes is in here
     S.token = Math.random().toString(36).slice(2)
-    await $.fs.write(`${S.dir}/heartbeat`, String(Date.now()))
-    await command($, { cmd: 'claim', owner: S.token }) // takes over a helper that is already running
-    await startHelper($) // starts one otherwise
+    await $.fs.write(`${$.plugin.root}/.state/heartbeat`, String(Date.now())) // every file it touches is in <plugin>/.state
+    await startHelper($) // unless one is running already
+    await command($, { cmd: 'claim', owner: S.token }) // the new helper, or one already running, now reports to this session
   } catch {
     return 'voice-buddy needs uv on your PATH: https://docs.astral.sh/uv/'
   }
