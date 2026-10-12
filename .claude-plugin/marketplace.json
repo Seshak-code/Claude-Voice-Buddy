@@ -1,0 +1,13 @@
+{
+  "name": "voice-buddy",
+  "description": "Talk to Claude Code and hear it answer, fully local.",
+  "owner": {
+    "name": "seshak"
+  },
+  "plugins": [
+    {
+      "name": "voice-buddy",
+      "source": "./"
+    }
+  ]
+}
