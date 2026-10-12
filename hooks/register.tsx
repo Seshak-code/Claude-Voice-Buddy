@@ -53,10 +53,10 @@ const S = {
   chat: [] as string[],
 }
 
-const launchPy = ($: Api) => `${$.plugin.root}/helper/launch.py`
-
-// `uv run --script` runs the stdlib-only launcher on any OS, with a Python it provides itself.
-const uv = ($: Api, ...args: string[]) => $.process.run(['uv', 'run', '--no-project', '--script', ...args])
+// The one program this plugin runs: its own stdlib-only launcher, through uv (which supplies Python on any OS).
+// It starts the audio helper in the background unless one is running already.
+const startHelper = ($: Api) =>
+  $.process.run(['uv', 'run', '--locked', '--script', `${$.plugin.root}/helper/launch.py`, 'start', S.token])
 
 const remember = (line: string) => S.chat.splice(0, S.chat.push(line) - 5) // keep the last 5
 
@@ -107,7 +107,7 @@ async function recover($: Api, helper: Helper | null) {
   const alive = await $.fs.stat(`${S.dir}/alive`).catch(() => undefined)
   const isAlive = alive !== undefined && Date.now() - alive.mtimeMs < 5000
   S.inUseElsewhere = isAlive && helper !== null && helper.state !== 'loading'
-  if (!isAlive) await uv($, launchPy($), 'start', S.token).catch(() => undefined)
+  if (!isAlive) await startHelper($).catch(() => undefined)
 }
 
 async function activate($: Api): Promise<string> {
@@ -117,11 +117,11 @@ async function activate($: Api): Promise<string> {
     return 'Voice is on.'
   }
   try {
-    S.dir = (await uv($, launchPy($), 'where')).stdout.trim()
+    S.dir = `${$.plugin.root}/.state` // every file this plugin reads or writes is in here
     S.token = Math.random().toString(36).slice(2)
     await $.fs.write(`${S.dir}/heartbeat`, String(Date.now()))
     await command($, { cmd: 'claim', owner: S.token }) // takes over a helper that is already running
-    await uv($, launchPy($), 'start', S.token) // starts one otherwise
+    await startHelper($) // starts one otherwise
   } catch {
     return 'voice-buddy needs uv on your PATH: https://docs.astral.sh/uv/'
   }

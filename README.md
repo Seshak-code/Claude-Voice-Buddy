@@ -2,7 +2,7 @@
 
 Talk to Claude Code and hear it answer. Speak, pause, and your words are sent as a prompt; Claude's reply is read back to you. A small animated buddy in a side pane shows what's happening: headphones on while it listens, a mic when Claude talks.
 
-Everything runs on your own machine. No audio or text is sent anywhere by this plugin.
+Everything runs on your own machine. No audio or text is sent anywhere by this plugin. [What it does on your machine](#what-this-plugin-does-on-your-machine) lists every program, file and download.
 
 ## Install
 
@@ -29,9 +29,7 @@ The first `/buddy` downloads the speech models (a few GB) and can take several m
 
 ## How it works
 
-The plugin (hooks in `hooks/`) draws the pane, submits what you said as a prompt, sends Claude's final reply to be spoken, and adds a short system-prompt note asking Claude to keep spoken replies brief.
-
-The audio work runs in a separate local process (`helper/helper.py`), which the plugin starts on `/buddy` and stops when the session ends, or which stops itself about 20 seconds after Claude Code goes away. They talk only through files in `~/.voice-buddy/`.
+The plugin (`hooks/`) draws the pane, submits what you said as a prompt, and hands Claude's final reply to be spoken. The audio work runs in a separate local process (`helper/helper.py`), which the plugin starts with `/buddy`. It stops when the session ends, or on its own about 20 seconds after Claude Code goes away. The two talk only through files in the plugin's own `.state/` folder.
 
 | Step | Apple Silicon Macs | Everything else |
 | --- | --- | --- |
@@ -39,22 +37,75 @@ The audio work runs in a separate local process (`helper/helper.py`), which the 
 | Speech to text | Whisper large-v3-turbo on MLX | faster-whisper (`small.en` on CPU, `large-v3-turbo` with CUDA; set `VOICE_BUDDY_STT_MODEL` to change) |
 | Text to speech | Kokoro on MLX | Kokoro (ONNX); falls back to the OS voice (`say`, Windows SAPI, `espeak-ng`/`spd-say`) |
 
-Settings (environment variables): `VOICE_BUDDY_INPUT_DEVICE` and `VOICE_BUDDY_OUTPUT_DEVICE` (part of a device name, e.g. `MacBook`; default: the system's), `VOICE_BUDDY_VOICE` (Kokoro voice, default `af_heart`), `VOICE_BUDDY_DIR` (state folder).
+Settings (environment variables): `VOICE_BUDDY_INPUT_DEVICE` and `VOICE_BUDDY_OUTPUT_DEVICE` (part of a device name, e.g. `MacBook`; default: the system's), `VOICE_BUDDY_VOICE` (Kokoro voice, default `af_heart`).
 
 If the pane says your mic is giving pure silence, the usual cause is a headset (AirPods) that's connected but not worn.
 
 **Tested on** macOS, Apple Silicon. The Windows, Linux and Intel paths are written but not yet tested.
 
-## Privacy and network use
+## What this plugin does on your machine
 
-- **Microphone:** while voice is on and not muted, the helper listens to your microphone continuously, to detect speech. Audio is processed in memory and never saved or sent anywhere.
-- **What's stored:** `~/.voice-buddy/` holds the current state, the last few transcripts (so the plugin can pick them up), logs and downloaded model files. Delete the folder at any time.
-- **Network:** only to download models and packages on first use:
-  - Python packages through uv (PyPI)
-  - Speech models from Hugging Face (`huggingface.co`): Whisper, Kokoro, and on non-Apple machines faster-whisper's models
-  - On non-Apple machines, Kokoro ONNX files from GitHub releases (`github.com/thewh1teagle/kokoro-onnx`)
-  - On Apple Silicon, a small English language model from GitHub (`github.com/explosion/spacy-models`), used by Kokoro
-- **Your prompts and Claude's replies** go only where Claude Code already sends them. The plugin adds nothing.
+### Programs it runs, and why
+
+The plugin runs one command, only when you turn voice on (`/buddy`), or at session start if you left it on:
+
+```
+uv run --locked --script <plugin>/helper/launch.py start <session-id>
+```
+
+- **`uv`** supplies Python and installs the helper's audio libraries, at the exact versions in the committed `helper/*.py.lock` files (`--locked`).
+- **`helper/launch.py`** (standard library only) starts the audio helper in the background, unless one is already running: `uv run --locked --script <plugin>/helper/helper.py --state-dir <plugin>/.state --owner <session-id>`.
+- **`helper/helper.py`** listens to the microphone, turns speech into text, and speaks replies. On non-Apple machines, if Kokoro can't load, it runs the OS's own speech program for replies: `say` (macOS), PowerShell's System.Speech (Windows), or `espeak-ng`, `espeak` or `spd-say` (Linux).
+
+`<session-id>` is a random ID the plugin makes for each session, so the helper knows which session gets the transcripts.
+
+### Files it reads and writes
+
+Everything is in `<plugin>/.state/` (the plugin's own folder). The plugin doesn't edit any build, start-up, settings or instruction file.
+
+| File | Written by | Read by | Holds |
+| --- | --- | --- | --- |
+| `state.json` | helper | plugin | the buddy's state, mic on/off, the session that owns the helper, the last 20 transcripts, the last 10 notices |
+| `cmd/*.json` | plugin | helper (then deleted) | commands: `say` (with Claude's reply), `stop`, `mic`, `mute`, `unmute`, `claim` (with the session ID), `quit` |
+| `heartbeat` | plugin, every ~5 s | helper | a timestamp; the helper exits when it goes stale |
+| `alive` | helper, every second | plugin, launcher | a timestamp, so nothing starts a second helper |
+| `helper.log`, `helper.out` | helper | you | errors and warnings |
+
+Model files go to the usual caches: Hugging Face's (`~/.cache/huggingface`), and on non-Apple machines `~/.cache/voice-buddy` for Kokoro ONNX. Claude Code's plugin storage keeps one value: whether voice was left on (`autostart`).
+
+The plugin reads no secrets, keys or settings from your machine.
+
+### What it sends, and where
+
+- **The plugin's hooks make no network calls.** They only read and write the files above and run the command above.
+- **Your microphone audio never leaves your machine.** It's processed in memory and never saved.
+- **Downloads, on first use only:**
+  - Python packages from PyPI, through uv
+  - Speech models from Hugging Face (`huggingface.co`): Whisper and Kokoro, and on non-Apple machines faster-whisper's models
+  - On non-Apple machines, the Kokoro ONNX files from GitHub releases (`github.com/thewh1teagle/kokoro-onnx`)
+  - On Apple Silicon, a small English language model from GitHub (`github.com/explosion/spacy-models`), which Kokoro uses
+
+  Nothing about you or your conversation is sent in these requests.
+- **Your prompts and Claude's replies** go only where Claude Code already sends them.
+
+### What it puts in prompts
+
+- **Prompts it submits:** exactly the words you said, as transcribed. Nothing is added.
+- **System prompt:** while voice is on, one section is added: *"The user is talking to you by voice: their messages are speech transcripts (expect misheard identifiers), and your final message is read aloud. Keep final messages short and conversational; leave code, diffs and long lists on screen and just say what they are."*
+
+### Hooks
+
+| Hook | What it does | What it changes |
+| --- | --- | --- |
+| `session.start` | Registers `/buddy`; if voice was left on, turns it on and opens the pane | nothing |
+| `command.run` (`/buddy`) | Turns voice on or off, mutes or unmutes, opens the pane | nothing else |
+| `prompt.submit` | Tells the helper to stop speaking (you're talking or typing again) | nothing: the prompt goes on unchanged |
+| `turn.complete` | Hands Claude's final answer to the helper to speak (main conversation only, not subagents) | nothing: the answer is shown unchanged |
+| `prompt.compose` | Adds the voice section above to the system prompt, while voice is on | adds that one section |
+| `session.end` | Tells the helper to quit | nothing |
+| `ui.render` (its own pane) | Draws the buddy, the mute button and the last few lines | only its own pane |
+
+The plugin also declares a type contract (`types` in `plugin.json`) so `claude plugin validate` can check the pane's state; Claude Code ignores it when loading.
 
 ## Develop
 

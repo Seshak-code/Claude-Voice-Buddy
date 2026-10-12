@@ -15,7 +15,7 @@
 """voice-buddy audio helper: always-on mic -> Silero + bandpass -> speech-to-text, and text-to-speech for replies.
 
 Runs in the background (the plugin starts it); everything is local. It talks to the plugin only
-through files in the state dir (default ~/.voice-buddy), so it behaves the same on every OS:
+through files in the state dir (<plugin>/.state), so it behaves the same on every OS:
   state.json   written here, read by the plugin: state, mic, owner, utterances, log
   cmd/*.json   written by the plugin, consumed here: say | stop | mic | mute | unmute | claim | quit
   heartbeat    rewritten by the plugin every few seconds; this process exits when it goes stale
@@ -50,7 +50,8 @@ INPUT_DEVICE = os.environ.get("VOICE_BUDDY_INPUT_DEVICE") or None    # part of a
 OUTPUT_DEVICE = os.environ.get("VOICE_BUDDY_OUTPUT_DEVICE") or None
 MLX_WHISPER = "mlx-community/whisper-large-v3-turbo"
 MLX_KOKORO = "mlx-community/Kokoro-82M-bf16"
-KOKORO_ONNX_FILES = {          # downloaded once into the state dir
+MODELS = Path.home() / ".cache" / "voice-buddy"   # Kokoro ONNX files (non-Apple only); other models use the Hugging Face cache
+KOKORO_ONNX_FILES = {          # downloaded once into MODELS
     "kokoro-v1.0.onnx": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx",
     "voices-v1.0.bin": "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin",
 }
@@ -93,7 +94,7 @@ def transcribe(audio) -> str:
 
 
 # --- text to speech ------------------------------------------------------------------------------
-def load_kokoro(state_dir: Path):
+def load_kokoro():
     """Returns synth(text) -> iterator of (float32 samples, sample_rate)."""
     if APPLE:
         from mlx_audio.tts.utils import load_model
@@ -101,11 +102,12 @@ def load_kokoro(state_dir: Path):
         list(tts.generate(text="Ready.", voice=VOICE, lang_code="a"))  # warm-up
         return lambda text: ((seg.audio, seg.sample_rate) for seg in tts.generate(text=text, voice=VOICE, lang_code="a"))
     from kokoro_onnx import Kokoro
+    MODELS.mkdir(parents=True, exist_ok=True)
     for name, url in KOKORO_ONNX_FILES.items():
-        if not (state_dir / name).exists():
-            urllib.request.urlretrieve(url, state_dir / (name + ".part"))
-            (state_dir / (name + ".part")).replace(state_dir / name)
-    tts = Kokoro(str(state_dir / "kokoro-v1.0.onnx"), str(state_dir / "voices-v1.0.bin"))
+        if not (MODELS / name).exists():
+            urllib.request.urlretrieve(url, MODELS / (name + ".part"))
+            (MODELS / (name + ".part")).replace(MODELS / name)
+    tts = Kokoro(str(MODELS / "kokoro-v1.0.onnx"), str(MODELS / "voices-v1.0.bin"))
     return lambda text: iter([tts.create(text, voice=VOICE, speed=1.0, lang="en-us")])
 
 
@@ -125,10 +127,10 @@ def system_voice_cmd(text: str):
 class Speaker:
     """Speaks on its own thread; stop() cuts it off mid-sentence."""
 
-    def __init__(self, state_dir: Path, note):
+    def __init__(self, note):
         self.synth = None
         try:
-            self.synth = load_kokoro(state_dir)
+            self.synth = load_kokoro()
         except Exception as err:
             note(f"Kokoro unavailable ({type(err).__name__}); using the system voice.")
         self.q = queue.Queue()
@@ -319,7 +321,7 @@ class Helper:
     def run(self):
         threading.Thread(target=self.tick_forever, daemon=True).start()
         load_stt()
-        self.speaker = Speaker(self.dir, self.note)
+        self.speaker = Speaker(self.note)
         threading.Thread(target=self.listen_forever, daemon=True).start()
         self.set_mic(True)                # listening from the start; the plugin's button mutes
         while not self.heartbeat_stale():
@@ -344,7 +346,7 @@ class Helper:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--state-dir", default=str(Path.home() / ".voice-buddy"))
+    ap.add_argument("--state-dir", default=str(Path(__file__).resolve().parent.parent / ".state"))
     ap.add_argument("--owner", default="")
     args = ap.parse_args()
     state_dir = Path(args.state_dir)

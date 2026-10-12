@@ -1,10 +1,10 @@
 {
   "name": "voice-buddy",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "seshak"
   },
-  "description": "Talk to Claude Code and hear it answer: local speech-to-text and text-to-speech on Apple Silicon, with an animated buddy.",
+  "description": "Talk to Claude Code and hear it answer: local speech-to-text and text-to-speech, with an animated octopus buddy.",
   "types": "./types/index.d.ts",
   "license": "MIT",
   "keywords": [
