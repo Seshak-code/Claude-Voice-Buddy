@@ -77,6 +77,9 @@ The plugin reads no secrets, keys or settings from your machine. The helper read
 
 ### What it sends, and where
 
+See also the [privacy policy](PRIVACY.md).
+
+
 - **The plugin's hooks make no network calls.** They only read and write the files above and run the command above.
 - **Your microphone audio never leaves your machine.** It's processed in memory and never saved.
 - **Downloads, on first use only:**

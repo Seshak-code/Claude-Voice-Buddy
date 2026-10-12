@@ -1,6 +1,6 @@
 {
   "name": "voice-buddy",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "author": {
     "name": "seshak"
   },
@@ -14,5 +14,10 @@
     "accessibility",
     "whisper",
     "kokoro"
-  ]
+  ],
+  "homepage": "https://github.com/Seshak-code/Claude-Voice-Buddy",
+  "repository": "https://github.com/Seshak-code/Claude-Voice-Buddy",
+  "documentationUrl": "https://github.com/Seshak-code/Claude-Voice-Buddy#readme",
+  "supportUrl": "https://github.com/Seshak-code/Claude-Voice-Buddy/issues",
+  "privacyPolicyUrl": "https://github.com/Seshak-code/Claude-Voice-Buddy/blob/main/PRIVACY.md"
 }
