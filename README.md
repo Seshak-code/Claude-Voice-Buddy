@@ -1,4 +1,4 @@
-# voice-buddy
+# Claude Voice Buddy
 
 Talk to Claude Code and hear it answer. Speak, pause, and your words are sent as a prompt; Claude's reply is read back to you. A small animated buddy in a side pane shows what's happening: headphones on while it listens, a mic when Claude talks.
 
@@ -7,7 +7,7 @@ Everything runs on your own machine. No audio or text is sent anywhere by this p
 ## Install
 
 ```
-/plugin install voice-buddy --marketplace <owner>/buddy-buddy
+/plugin install voice-buddy --marketplace Seshak-code/Claude-Voice-Buddy
 ```
 
 Then type `/buddy` in any Claude Code session. (Not `/voice`: that's Claude Code's own built-in dictation.)
